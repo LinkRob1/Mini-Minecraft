@@ -29,10 +29,11 @@ Fonctionnalités supplémentaires :
 - Sauvegarde / chargement du monde dans `localStorage`
 - Effacer le monde
 
-Prochaines étapes recommandées :
-- Optimisation (InstancedMesh pour les blocs)
-- Génération de terrain plus avancée (Perlin noise)
-- Ajout d'un inventaire, textures et biomes
+ Prochaines étapes recommandées :
+ - Optimisation (InstancedMesh pour les blocs)
+ - Génération de terrain plus avancée (Perlin noise)
+ - Ajout d'un inventaire, textures et biomes
+ Prochaines améliorations : instanced rendering (déjà implémenté pour le terrain), textures, inventaire, Perlin amélioré.
 
 Ressources :
 - Three.js : https://threejs.org

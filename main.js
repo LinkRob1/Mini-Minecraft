@@ -80,7 +80,7 @@ function createInstancedMeshes(capacity = 8192) {
     scene.add(mesh);
   });
 }
-createInstancedMeshes(8192);
+createInstancedMeshes(20000);
 
 function addInstancedBlock(type, x, y, z) {
   if (!(type in instancedData)) type = 'grass';
