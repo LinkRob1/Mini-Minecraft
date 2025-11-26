@@ -31,7 +31,7 @@ const player = {
 };
 const moveState = { forward: false, back: false, left: false, right: false };
 
-// Blocks
+// Blocks (per-block dynamic meshes)
 const BLOCK_SIZE = 1;
 const boxGeometry = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
 const MATERIALS = {
@@ -41,7 +41,7 @@ const MATERIALS = {
   wood: new THREE.MeshLambertMaterial({ color: 0x8b4513 }),
 };
 
-// blocks map: key -> mesh
+// dynamic blocks map (user-placed or non-instanced)
 const blocks = new Map();
 function keyFromVec(x, y, z) { return `${x},${y},${z}`; }
 
@@ -64,6 +64,56 @@ function removeBlock(x, y, z) {
   scene.remove(mesh);
   blocks.delete(key);
   return true;
+}
+
+// Instanced mesh support (static terrain blocks)
+const instancedData = { grass: [], dirt: [], stone: [], wood: [] };
+const instancedMeshes = {};
+const staticBlockSet = new Set(); // to check collisions
+
+function createInstancedMeshes(capacity = 8192) {
+  Object.keys(instancedData).forEach((t) => {
+    if (instancedMeshes[t]) scene.remove(instancedMeshes[t]);
+    const mesh = new THREE.InstancedMesh(boxGeometry, MATERIALS[t], capacity);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instancedMeshes[t] = mesh;
+    scene.add(mesh);
+  });
+}
+createInstancedMeshes(8192);
+
+function addInstancedBlock(type, x, y, z) {
+  if (!(type in instancedData)) type = 'grass';
+  instancedData[type].push({ x, y, z });
+  staticBlockSet.add(`${x},${y},${z}`);
+}
+
+function removeInstancedBlock(type, x, y, z) {
+  if (!(type in instancedData)) return false;
+  const list = instancedData[type];
+  const key = `${x},${y},${z}`;
+  const idx = list.findIndex((p) => p.x === x && p.y === y && p.z === z);
+  if (idx === -1) return false;
+  list.splice(idx, 1);
+  staticBlockSet.delete(key);
+  rebuildInstancedMesh(type);
+  return true;
+}
+
+function rebuildInstancedMesh(type) {
+  const list = instancedData[type];
+  const mesh = instancedMeshes[type];
+  if (!mesh) return;
+  // Set matrices for instances
+  const count = list.length;
+  for (let i = 0; i < count; i++) {
+    const pos = list[i];
+    const m = new THREE.Matrix4();
+    m.makeTranslation(pos.x, pos.y, pos.z);
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.count = count;
+  mesh.instanceMatrix.needsUpdate = true;
 }
 
 // Perlin implementation (improved Perlin, ported)
@@ -128,7 +178,7 @@ function generateTerrain(width = 40, depth = 40, maxHeight = 6, seed = 0) {
       const height = Math.max(1, Math.floor(normalized * (maxHeight - 1)) + 1);
       for (let y = 0; y < height; y++) {
         const type = (y === height - 1) ? 'grass' : 'dirt';
-        addBlock(i + xOffset, y, k + zOffset, type);
+        addInstancedBlock(type, i + xOffset, y, k + zOffset);
       }
     }
   }
@@ -136,6 +186,7 @@ function generateTerrain(width = 40, depth = 40, maxHeight = 6, seed = 0) {
 
 // generate initial terrain
 generateTerrain(40, 40, 8, 42);
+Object.keys(instancedData).forEach(t => rebuildInstancedMesh(t));
 
 // grid
 const grid = new THREE.GridHelper(80, 80, 0x000000, 0x000000); grid.material.opacity = 0.08; grid.material.transparent = true; scene.add(grid);
@@ -156,10 +207,22 @@ const clearBtn = document.getElementById('clearBtn');
 
 function updateGhost() {
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
-  const intersects = raycaster.intersectObjects(Array.from(blocks.values()));
+  // Intersect dynamic blocks + instanced meshes
+  const intersectObjects = Array.from(blocks.values()).concat(Object.values(instancedMeshes));
+  const intersects = raycaster.intersectObjects(intersectObjects);
   if (intersects.length > 0) {
     const it = intersects[0];
-    const pos = it.object.position.clone().add(it.face.normal);
+    // If instantiated mesh, compute pos from instanceId
+    let pos;
+    if (it.object.isInstancedMesh && it.instanceId !== undefined && it.instanceId !== null) {
+      const mat = new THREE.Matrix4();
+      it.object.getMatrixAt(it.instanceId, mat);
+      const position = new THREE.Vector3();
+      position.setFromMatrixPosition(mat);
+      pos = position.clone().add(it.face.normal);
+    } else {
+      pos = it.object.position.clone().add(it.face.normal);
+    }
     ghostCube.position.copy(pos);
     ghostCube.material = MATERIALS[blockSelect.value];
     ghostCube.material.transparent = true;
@@ -175,19 +238,43 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('mousedown', (e) => {
   if (!controls.isLocked) return;
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
-  const intersects = raycaster.intersectObjects(Array.from(blocks.values()));
+  const intersectObjects = Array.from(blocks.values()).concat(Object.values(instancedMeshes));
+  const intersects = raycaster.intersectObjects(intersectObjects);
   if (e.button === 0) {
     // left click remove
     if (intersects.length > 0) {
       const it = intersects[0];
-      removeBlock(it.object.position.x, it.object.position.y, it.object.position.z);
+      if (it.object.isInstancedMesh && it.instanceId !== undefined && it.instanceId !== null) {
+        // find type for this mesh
+        const type = Object.keys(instancedMeshes).find(k => instancedMeshes[k] === it.object);
+        if (type) {
+          // retrieve instance position
+          const mat = new THREE.Matrix4();
+          it.object.getMatrixAt(it.instanceId, mat);
+          const position = new THREE.Vector3();
+          position.setFromMatrixPosition(mat);
+          removeInstancedBlock(type, Math.round(position.x), Math.round(position.y), Math.round(position.z));
+        }
+      } else {
+        removeBlock(it.object.position.x, it.object.position.y, it.object.position.z);
+      }
     }
   } else if (e.button === 2) {
     // right click add block of selected type
     if (intersects.length > 0) {
       const it = intersects[0];
-      const pos = it.object.position.clone().add(it.face.normal);
-      addBlock(pos.x, pos.y, pos.z, blockSelect.value);
+      let pos;
+      if (it.object.isInstancedMesh && it.instanceId !== undefined && it.instanceId !== null) {
+        const mat = new THREE.Matrix4();
+        it.object.getMatrixAt(it.instanceId, mat);
+        const position = new THREE.Vector3();
+        position.setFromMatrixPosition(mat);
+        pos = position.clone().add(it.face.normal);
+      } else {
+        pos = it.object.position.clone().add(it.face.normal);
+      }
+      // add as dynamic block
+      addBlock(Math.round(pos.x), Math.round(pos.y), Math.round(pos.z), blockSelect.value);
     }
   }
 });
@@ -216,7 +303,7 @@ function isOnGround() {
   const pos = controls.getObject().position;
   const footY = Math.floor(pos.y - 0.1);
   const key = keyFromVec(Math.round(pos.x), footY, Math.round(pos.z));
-  return blocks.has(key);
+  return blocks.has(key) || staticBlockSet.has(key);
 }
 
 function updatePlayer(delta) {
@@ -250,9 +337,14 @@ function updatePlayer(delta) {
 // world management: save/load
 function saveWorld() {
   const arr = [];
+  // static instanced blocks
+  for (const type of Object.keys(instancedData)) {
+    for (const p of instancedData[type]) arr.push({ x: p.x, y: p.y, z: p.z, type, static: true });
+  }
+  // dynamic blocks
   for (const [k, mesh] of blocks.entries()) {
     const [x, y, z] = k.split(',').map(Number);
-    arr.push({ x, y, z, type: mesh.userData.type || 'grass' });
+    arr.push({ x, y, z, type: mesh.userData.type || 'grass', static: false });
   }
   localStorage.setItem('mini-minecraft-world', JSON.stringify(arr));
 }
@@ -260,15 +352,24 @@ function loadWorld() {
   const json = localStorage.getItem('mini-minecraft-world');
   if (!json) return false;
   const arr = JSON.parse(json);
-  // clear current
-  for (const k of Array.from(blocks.keys())) {
-    const [x, y, z] = k.split(',').map(Number);
-    removeBlock(x, y, z);
+  // clear current dynamic and static
+  for (const k of Array.from(blocks.keys())) { const [x,y,z]=k.split(',').map(Number); removeBlock(x,y,z); }
+  for (const t of Object.keys(instancedData)) { instancedData[t] = []; staticBlockSet.clear(); }
+  // load
+  for (const b of arr) {
+    if (b.static) addInstancedBlock(b.type, b.x, b.y, b.z);
+    else addBlock(b.x, b.y, b.z, b.type);
   }
-  for (const b of arr) addBlock(b.x, b.y, b.z, b.type);
+  // rebuild all instanced meshes
+  Object.keys(instancedData).forEach(t => rebuildInstancedMesh(t));
   return true;
 }
-function clearWorld() { for (const k of Array.from(blocks.keys())) { const [x,y,z]=k.split(',').map(Number); removeBlock(x,y,z); } }
+function clearWorld() {
+  for (const k of Array.from(blocks.keys())) { const [x,y,z]=k.split(',').map(Number); removeBlock(x,y,z); }
+  for (const t of Object.keys(instancedData)) { instancedData[t] = []; }
+  staticBlockSet.clear();
+  Object.keys(instancedMeshes).forEach(t => rebuildInstancedMesh(t));
+}
 
 // UI button bindings
 saveBtn.addEventListener('click', () => { saveWorld(); alert('Monde sauvegardé localement'); });
