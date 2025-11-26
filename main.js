@@ -4,6 +4,8 @@
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
+// add fog for horizon effect
+scene.fog = new THREE.FogExp2(0x87ceeb, 0.0026);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -36,11 +38,36 @@ const moveState = { forward: false, back: false, left: false, right: false };
 // Blocks (per-block dynamic meshes)
 const BLOCK_SIZE = 1;
 const boxGeometry = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+// Textured materials: create small canvas textures and use them
+function makeCanvasTexture(drawFn, size = 64, repeat = 1) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  drawFn(ctx, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  tex.magFilter = THREE.NearestFilter;
+  return tex;
+}
+
+const textures = {
+  grass: makeCanvasTexture((ctx, s) => {
+    ctx.fillStyle = '#4CAF50'; ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = '#3E8E41'; // stripes
+    for (let i = 0; i < 6; i++) { ctx.fillRect((i*11)%s, (i*7)%s, 4, 4); }
+  }, 64, 1),
+  dirt: makeCanvasTexture((ctx, s) => { ctx.fillStyle = '#8B5A2B'; ctx.fillRect(0,0,s,s); for(let i=0;i<80;i++){ ctx.fillStyle = `rgb(${120+Math.floor(Math.random()*30)}, ${60+Math.floor(Math.random()*20)}, ${30+Math.floor(Math.random()*20)})`; ctx.fillRect(Math.random()*s, Math.random()*s, 1,1);} }, 64, 1),
+  stone: makeCanvasTexture((ctx, s) => { ctx.fillStyle='#888888'; ctx.fillRect(0,0,s,s); for(let i=0;i<120;i++){ ctx.fillStyle = `rgb(${140+Math.floor(Math.random()*30)}, ${140+Math.floor(Math.random()*30)}, ${140+Math.floor(Math.random()*30)})`; ctx.fillRect(Math.random()*s, Math.random()*s, 1,1);} }, 64, 1),
+  wood: makeCanvasTexture((ctx, s) => { ctx.fillStyle = '#8B4513'; ctx.fillRect(0,0,s,s); ctx.fillStyle = '#623212'; for (let i=0;i<s;i+=4) { ctx.fillRect(i,0,1,s); } }, 64, 1),
+};
+
 const MATERIALS = {
-  grass: new THREE.MeshLambertMaterial({ color: 0x2e8b57 }),
-  dirt: new THREE.MeshLambertMaterial({ color: 0x8b5a2b }),
-  stone: new THREE.MeshLambertMaterial({ color: 0x808080 }),
-  wood: new THREE.MeshLambertMaterial({ color: 0x8b4513 }),
+  grass: new THREE.MeshLambertMaterial({ map: textures.grass }),
+  dirt: new THREE.MeshLambertMaterial({ map: textures.dirt }),
+  stone: new THREE.MeshLambertMaterial({ map: textures.stone }),
+  wood: new THREE.MeshLambertMaterial({ map: textures.wood }),
 };
 
 // dynamic blocks map (user-placed or non-instanced)
@@ -207,8 +234,11 @@ if (spawnTop !== null) {
   controls.getObject().position.set(0, 12, 0);
 }
 
-// grid
-const grid = new THREE.GridHelper(80, 80, 0x000000, 0x000000); grid.material.opacity = 0.08; grid.material.transparent = true; scene.add(grid);
+// grid and ground plane
+const grid = new THREE.GridHelper(200, 200, 0x000000, 0x000000); grid.material.opacity = 0.08; grid.material.transparent = true; scene.add(grid);
+const groundGeo = new THREE.PlaneGeometry(400, 400);
+const groundMat = new THREE.MeshLambertMaterial({ map: textures.grass });
+const ground = new THREE.Mesh(groundGeo, groundMat); ground.rotation.x = -Math.PI/2; ground.position.y = -0.5; ground.receiveShadow = true; ground.material.map.repeat.set(80,80); scene.add(ground);
 
 // Crosshair
 const crosshair = document.createElement('div'); crosshair.id = 'crosshair'; crosshair.innerText = '+'; document.body.appendChild(crosshair);
@@ -242,7 +272,7 @@ function updateGhost() {
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
   // Intersect dynamic blocks + instanced meshes
   const intersectObjects = Array.from(blocks.values()).concat(Object.values(instancedMeshes));
-  const intersects = raycaster.intersectObjects(intersectObjects);
+  const intersects = raycaster.intersectObjects(intersectObjects, true);
   if (intersects.length > 0) {
     const it = intersects[0];
     // If instantiated mesh, compute pos from instanceId
@@ -257,7 +287,10 @@ function updateGhost() {
       pos = it.object.position.clone().add(it.face.normal);
     }
     ghostCube.position.copy(pos);
-    ghostCube.material = MATERIALS[selectedType];
+    // Use a clone of the material so we can set opacity without modifying original
+    const mat = MATERIALS[selectedType].clone();
+    mat.transparent = true; mat.opacity = 0.6; mat.depthWrite = false;
+    ghostCube.material = mat;
     ghostCube.material.transparent = true;
     ghostCube.material.opacity = 0.5;
     ghostCube.visible = true;
