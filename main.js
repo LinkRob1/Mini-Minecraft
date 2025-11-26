@@ -306,6 +306,52 @@ function isOnGround() {
   return blocks.has(key) || staticBlockSet.has(key);
 }
 
+// Player collision / AABB helpers
+const PLAYER_HEIGHT = 1.7; // eye height ~1.7
+const PLAYER_RADIUS = 0.25;
+
+function aabbIntersects(minA, maxA, minB, maxB) {
+  return (minA.x <= maxB.x && maxA.x >= minB.x) &&
+         (minA.y <= maxB.y && maxA.y >= minB.y) &&
+         (minA.z <= maxB.z && maxA.z >= minB.z);
+}
+
+function playerAABBAt(pos) {
+  return {
+    min: new THREE.Vector3(pos.x - PLAYER_RADIUS, pos.y - PLAYER_HEIGHT, pos.z - PLAYER_RADIUS),
+    max: new THREE.Vector3(pos.x + PLAYER_RADIUS, pos.y, pos.z + PLAYER_RADIUS)
+  };
+}
+
+function worldAABBAt(x, y, z) {
+  return {
+    min: new THREE.Vector3(x - 0.5, y - 0.5, z - 0.5),
+    max: new THREE.Vector3(x + 0.5, y + 0.5, z + 0.5)
+  };
+}
+
+function anyBlockIntersectingAABB(min, max) {
+  const minX = Math.floor(min.x);
+  const maxX = Math.floor(max.x);
+  const minY = Math.floor(min.y);
+  const maxY = Math.floor(max.y);
+  const minZ = Math.floor(min.z);
+  const maxZ = Math.floor(max.z);
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        const key = `${x},${y},${z}`;
+        if (staticBlockSet.has(key) || blocks.has(key)) {
+          // check aabb precise
+          const blockAABB = worldAABBAt(x, y, z);
+          if (aabbIntersects({min, max}, {min: blockAABB.min, max: blockAABB.max})) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function updatePlayer(delta) {
   const speed = player.speed;
   player.direction.set(0, 0, 0);
@@ -321,13 +367,49 @@ function updatePlayer(delta) {
   move.addScaledVector(forwardVector, -player.direction.z * speed * delta);
   move.addScaledVector(rightVector, player.direction.x * speed * delta);
 
+  // gravity
   player.velocity.y -= 9.8 * delta;
   const standingOn = isOnGround();
   if (standingOn) { player.canJump = true; player.velocity.y = Math.max(0, player.velocity.y); }
   else player.canJump = false;
 
-  controls.getObject().position.add(move);
-  controls.getObject().position.y += player.velocity.y * delta;
+  // collisions: resolve axis separately to allow sliding
+  const pos = controls.getObject().position.clone();
+  // horizontal X
+  const nextPosX = pos.clone(); nextPosX.x += move.x;
+  const aabbX = playerAABBAt(new THREE.Vector3(nextPosX.x, pos.y, pos.z));
+  if (!anyBlockIntersectingAABB(aabbX.min, aabbX.max)) {
+    controls.getObject().position.x = nextPosX.x;
+  } else {
+    // zero out horizontal x movement
+  }
+  // horizontal Z
+  const nextPosZ = pos.clone(); nextPosZ.z += move.z;
+  const aabbZ = playerAABBAt(new THREE.Vector3(pos.x, pos.y, nextPosZ.z));
+  if (!anyBlockIntersectingAABB(aabbZ.min, aabbZ.max)) {
+    controls.getObject().position.z = nextPosZ.z;
+  } else {
+    // zero out
+  }
+  // vertical
+  const nextPosY = pos.clone(); nextPosY.y += player.velocity.y * delta;
+  const aabbY = playerAABBAt(new THREE.Vector3(controls.getObject().position.x, nextPosY.y, controls.getObject().position.z));
+  if (!anyBlockIntersectingAABB(aabbY.min, aabbY.max)) {
+    controls.getObject().position.y = nextPosY.y;
+  } else {
+    // collision vertical (ground/ceiling)
+    if (player.velocity.y < 0) {
+      // landed on ground
+      player.canJump = true;
+      player.velocity.y = 0;
+      // snap to top of ground block (set y to integer + PLAYER_HEIGHT)
+      const footY = Math.floor(controls.getObject().position.y - 0.1);
+      controls.getObject().position.y = footY + 1 + 0.001 + PLAYER_HEIGHT - PLAYER_HEIGHT; // ensure above
+    } else {
+      // hit ceiling
+      player.velocity.y = 0;
+    }
+  }
   if (controls.getObject().position.y < -50) {
     controls.getObject().position.set(0, 10, 0);
     player.velocity.set(0, 0, 0);
