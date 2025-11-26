@@ -24,10 +24,12 @@ controls.addEventListener('unlock', () => overlay.style.display = '');
 
 // Player
 const player = {
-  velocity: new THREE.Vector3(0, 0, 0),
+  velocity: new THREE.Vector3(0, 0, 0), // x,z used for horizontal movement, y for vertical
   direction: new THREE.Vector3(0, 0, 0),
   canJump: false,
   speed: 6,
+  acc: 30, // acceleration for horizontal
+  friction: 10,
 };
 const moveState = { forward: false, back: false, left: false, right: false };
 
@@ -286,7 +288,7 @@ window.addEventListener('keydown', (e) => {
     case 'KeyS': moveState.back = true; break;
     case 'KeyA': moveState.left = true; break;
     case 'KeyD': moveState.right = true; break;
-    case 'Space': if (player.canJump) { player.velocity.y += 8; player.canJump = false; } break;
+    case 'Space': if (player.canJump) { player.velocity.y = 8; player.canJump = false; } break;
     case 'Escape': controls.unlock(); break;
   }
 });
@@ -364,11 +366,25 @@ function updatePlayer(delta) {
   const forwardVector = new THREE.Vector3(); camera.getWorldDirection(forwardVector); forwardVector.y = 0; forwardVector.normalize();
   const rightVector = new THREE.Vector3(); rightVector.crossVectors(forwardVector, camera.up).normalize();
   const move = new THREE.Vector3();
-  move.addScaledVector(forwardVector, -player.direction.z * speed * delta);
-  move.addScaledVector(rightVector, player.direction.x * speed * delta);
+  move.addScaledVector(forwardVector, -player.direction.z * speed);
+  move.addScaledVector(rightVector, player.direction.x * speed);
+
+  // Update horizontal velocities with acceleration & friction
+  const desiredVel = new THREE.Vector3(move.x, 0, move.z);
+  // Current horizontal velocity
+  const horizVel = new THREE.Vector3(player.velocity.x, 0, player.velocity.z);
+  // Apply acceleration toward desiredVel
+  const accel = desiredVel.clone().sub(horizVel).multiplyScalar(Math.min(1, player.acc * delta));
+  horizVel.add(accel);
+  // Apply friction if no input
+  if (player.direction.length() === 0) {
+    horizVel.multiplyScalar(Math.max(0, 1 - player.friction * delta));
+  }
+  player.velocity.x = horizVel.x;
+  player.velocity.z = horizVel.z;
 
   // gravity
-  player.velocity.y -= 9.8 * delta;
+  player.velocity.y -= 18.0 * delta; // stronger gravity for snappier fall
   const standingOn = isOnGround();
   if (standingOn) { player.canJump = true; player.velocity.y = Math.max(0, player.velocity.y); }
   else player.canJump = false;
@@ -376,7 +392,7 @@ function updatePlayer(delta) {
   // collisions: resolve axis separately to allow sliding
   const pos = controls.getObject().position.clone();
   // horizontal X
-  const nextPosX = pos.clone(); nextPosX.x += move.x;
+  const nextPosX = pos.clone(); nextPosX.x += player.velocity.x * delta;
   const aabbX = playerAABBAt(new THREE.Vector3(nextPosX.x, pos.y, pos.z));
   if (!anyBlockIntersectingAABB(aabbX.min, aabbX.max)) {
     controls.getObject().position.x = nextPosX.x;
@@ -384,7 +400,7 @@ function updatePlayer(delta) {
     // zero out horizontal x movement
   }
   // horizontal Z
-  const nextPosZ = pos.clone(); nextPosZ.z += move.z;
+  const nextPosZ = pos.clone(); nextPosZ.z += player.velocity.z * delta;
   const aabbZ = playerAABBAt(new THREE.Vector3(pos.x, pos.y, nextPosZ.z));
   if (!anyBlockIntersectingAABB(aabbZ.min, aabbZ.max)) {
     controls.getObject().position.z = nextPosZ.z;
@@ -403,8 +419,19 @@ function updatePlayer(delta) {
       player.canJump = true;
       player.velocity.y = 0;
       // snap to top of ground block (set y to integer + PLAYER_HEIGHT)
-      const footY = Math.floor(controls.getObject().position.y - 0.1);
-      controls.getObject().position.y = footY + 1 + 0.001 + PLAYER_HEIGHT - PLAYER_HEIGHT; // ensure above
+      // find highest block directly below
+      const px = Math.round(controls.getObject().position.x);
+      const pz = Math.round(controls.getObject().position.z);
+      let topY = -Infinity;
+      for (let y = Math.floor(controls.getObject().position.y) - 2; y >= -64; y--) {
+        if (staticBlockSet.has(`${px},${y},${pz}`) || blocks.has(`${px},${y},${pz}`)) { topY = y; break; }
+      }
+      if (topY === -Infinity) {
+        controls.getObject().position.y = 10; // fallback
+      } else {
+        // camera top should be block top (y + 0.5) + player height
+        controls.getObject().position.y = topY + 0.5 + PLAYER_HEIGHT;
+      }
     } else {
       // hit ceiling
       player.velocity.y = 0;
