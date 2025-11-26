@@ -2,11 +2,8 @@
 Mini-Minecraft est un projet d'exemple qui montre un petit monde voxel en 3D avec mouvement joueur, placement/suppression de blocs et génération procédurale basée sur Perlin noise.
 
 Fonctionnalités implémentées :
-- Scène 3D construite avec Three.js
-- Terrain procédural (grid + hauteur minimale)
-- Mouvement joueur (WASD + saut) via Pointer Lock Controls
-- Placement (click droite) et suppression (click gauche) de blocs
-- Previsualisation de placement (ghost cube)
+ Textures procédurales (Herbe, Terre, Pierre, Bois) appliquées aux blocs
+ Plan de sol texturé et effet de brume (fog) pour horizon
 
 Comment lancer :
 1. Cloner le dépôt et ouvrir un serveur HTTP local (les fichiers sont statiques) :
