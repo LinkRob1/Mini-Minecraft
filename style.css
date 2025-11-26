@@ -21,3 +21,5 @@ button { cursor: pointer; }
 .slot { width: 72px; height: 44px; background: rgba(0,0,0,0.4); color: #fff; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-direction:column; font-size:12px; }
 .slot.selected { background: rgba(80,160,80,0.9); }
 .slot .count { font-weight:600; }
+
+#pointerStatus { color: #fff; font-size: 13px; margin-top: 8px; }

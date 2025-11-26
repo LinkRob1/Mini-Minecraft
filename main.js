@@ -25,16 +25,64 @@ const overlay = document.getElementById('overlay');
 console.log('startBtn element:', startBtn, 'overlay element:', overlay);
 if (startBtn) {
   startBtn.addEventListener('click', (e) => {
-    console.log('startBtn clicked, calling controls.lock()');
-    controls.lock();
-  });
+      console.log('startBtn clicked, attempting pointer lock');
+      try { controls.lock(); } catch (err) { console.warn('controls.lock() failed', err); }
+      // Try direct document.body.requestPointerLock() as a fallback if not locked shortly
+      setTimeout(() => {
+        if (!document.pointerLockElement && document.body.requestPointerLock) {
+          try { document.body.requestPointerLock(); } catch (err) { console.warn('requestPointerLock failed', err); }
+        }
+      }, 150);
+    });
 } else {
   console.warn('startBtn not found');
 }
+// status for pointer lock / errors
+let pointerStatus = document.getElementById('pointerStatus');
+if (!pointerStatus) {
+  pointerStatus = document.createElement('div');
+  pointerStatus.id = 'pointerStatus';
+  pointerStatus.style.color = '#fff';
+  pointerStatus.style.marginTop = '8px';
+  pointerStatus.style.fontSize = '13px';
+  overlay.appendChild(pointerStatus);
+}
+function updatePointerStatus(msg) { pointerStatus.innerText = msg || ''; }
+
+// Also try to lock when clicking anywhere on the canvas
+renderer.domElement.addEventListener('click', (e) => {
+  if (!controls.isLocked) {
+    console.log('canvas clicked, trying to lock');
+    controls.lock();
+  }
+});
+
+// fallback: if pointerlock isn't available, allow mouse dragging to rotate camera
+let mouseDrag = { active: false, lastX: 0, lastY: 0 };
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (!controls.isLocked) { mouseDrag.active = true; mouseDrag.lastX = e.clientX; mouseDrag.lastY = e.clientY; }
+});
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (mouseDrag.active && !controls.isLocked) {
+    const dx = e.clientX - mouseDrag.lastX;
+    const dy = e.clientY - mouseDrag.lastY;
+    const sensitivity = 0.0025;
+    camera.rotation.y -= dx * sensitivity;
+    camera.rotation.x -= dy * sensitivity;
+    camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+    mouseDrag.lastX = e.clientX; mouseDrag.lastY = e.clientY;
+  }
+});
+document.addEventListener('mouseup', () => { mouseDrag.active = false; });
 controls.addEventListener('lock', () => { console.log('Pointer locked'); overlay.style.display = 'none'; });
 controls.addEventListener('unlock', () => { console.log('Pointer unlocked'); overlay.style.display = ''; });
 // Pointer lock error handler
-document.addEventListener('pointerlockerror', (e) => { console.warn('Pointer lock error', e); overlay.style.display = ''; });
+document.addEventListener('pointerlockerror', (e) => { console.warn('Pointer lock error', e); overlay.style.display = ''; updatePointerStatus('Erreur: impossible de verrouiller la souris.'); });
+document.addEventListener('pointerlockchange', () => {
+  const el = document.pointerLockElement || document.mozPointerLockElement || document.webkitPointerLockElement;
+  if (el === document.body) { console.log('pointer locked globally'); updatePointerStatus('Pointer locked'); overlay.style.display = 'none'; }
+  else { console.log('pointer unlocked globally'); overlay.style.display = ''; updatePointerStatus(''); }
+});
 
 // Player
 const player = {
