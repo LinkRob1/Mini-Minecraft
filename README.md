@@ -22,6 +22,8 @@ npx http-server -c-1
 4. Utilisez WASD pour bouger, Space pour sauter.
 5. Click gauche: supprimer bloc; Click droit: placer bloc
 6. Touches 1-4 : sélection rapide du type de bloc (1=Herbe, 2=Terre, 3=Pierre, 4=Bois)
+7. Si le bouton "Commencer" ne verrouille pas la souris, cliquez sur la zone de rendu (canvas) pour activer le contrôle de la souris, et/ou activez le mode Infini avec R.
+8. Si pointer lock n'est pas disponible, vous pouvez faire glisser la souris (drag) pour faire pivoter la caméra et utiliser WASD pour vous déplacer.
 
 Fonctionnalités supplémentaires :
 - Choix du type de bloc (Herbe, Terre, Pierre, Bois)
