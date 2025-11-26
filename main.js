@@ -11,12 +11,15 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
+renderer.shadowMap.enabled = true;
 
 // Lights
 // lighting: ambient + hemisphere + directional for warmth
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.35); scene.add(ambientLight);
 const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x777777, 0.6); scene.add(hemiLight);
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.7); dirLight.position.set(10, 20, 10); scene.add(dirLight);
+dirLight.castShadow = true; 
+dirLight.shadow.mapSize.set(2048, 2048); 
 
 // Controls
 const controls = new THREE.PointerLockControls(camera, document.body);
@@ -144,6 +147,8 @@ function addBlock(x, y, z, type = 'grass') {
   mesh.position.set(x, y, z);
   mesh.userData = { type };
   scene.add(mesh);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   blocks.set(key, mesh);
   return mesh;
 }
@@ -172,6 +177,8 @@ function createInstancedMeshes(capacity = 8192) {
     const mesh = new THREE.InstancedMesh(boxGeometry, MATERIALS[t], capacity);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     instancedMeshes[t] = mesh;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     scene.add(mesh);
   });
 }
@@ -325,11 +332,19 @@ if (spawnTop !== null) {
 // grid and ground plane
 const grid = new THREE.GridHelper(200, 200, 0x000000, 0x000000); grid.material.opacity = 0.08; grid.material.transparent = true; scene.add(grid);
 const groundGeo = new THREE.PlaneGeometry(400, 400);
-const groundMat = new THREE.MeshLambertMaterial({ map: textures.grass });
+const groundMat = new THREE.MeshStandardMaterial({ map: textures.grass });
 const ground = new THREE.Mesh(groundGeo, groundMat); ground.rotation.x = -Math.PI/2; ground.position.y = -0.5; ground.receiveShadow = true; ground.material.map.repeat.set(80,80); scene.add(ground);
 
 // Crosshair
 const crosshair = document.createElement('div'); crosshair.id = 'crosshair'; crosshair.innerText = '+'; document.body.appendChild(crosshair);
+
+// Add a simple hand/arm mesh attached to camera for first-person look
+const handGeo = new THREE.BoxGeometry(0.4, 0.4, 0.9);
+const handMat = new THREE.MeshStandardMaterial({ color: 0xffe0bd, roughness: 0.9 });
+const handMesh = new THREE.Mesh(handGeo, handMat);
+handMesh.position.set(0.5, -0.6, -0.9);
+handMesh.castShadow = true; handMesh.receiveShadow = false;
+camera.add(handMesh);
 
 // Raycaster and ghost
 const raycaster = new THREE.Raycaster();
