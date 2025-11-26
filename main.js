@@ -301,6 +301,14 @@ window.addEventListener('keyup', (e) => {
   }
 });
 
+// quick keys to switch blocks
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Digit1') blockSelect.value = 'grass';
+  if (e.code === 'Digit2') blockSelect.value = 'dirt';
+  if (e.code === 'Digit3') blockSelect.value = 'stone';
+  if (e.code === 'Digit4') blockSelect.value = 'wood';
+});
+
 function isOnGround() {
   const pos = controls.getObject().position;
   const footY = Math.floor(pos.y - 0.1);

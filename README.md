@@ -21,8 +21,10 @@ npx http-server -c-1
 ```
 
 2. Ouvrez le navigateur sur http://localhost:8000
-3. Cliquez sur « Commencer » pour verrouiller la souris. Utilisez WASD pour bouger, espace pour sauter.
-4. Choisissez un type de bloc depuis le sélecteur dans l'overlay pour placer différentes textures.
+3. Cliquez sur « Commencer » pour verrouiller la souris.
+4. Utilisez WASD pour bouger, Space pour sauter.
+5. Click gauche: supprimer bloc; Click droit: placer bloc
+6. Touches 1-4 : sélection rapide du type de bloc (1=Herbe, 2=Terre, 3=Pierre, 4=Bois)
 
 Fonctionnalités supplémentaires :
 - Choix du type de bloc (Herbe, Terre, Pierre, Bois)
