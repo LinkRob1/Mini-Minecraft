@@ -25,12 +25,13 @@ const overlay = document.getElementById('overlay');
 console.log('startBtn element:', startBtn, 'overlay element:', overlay);
 if (startBtn) {
   startBtn.addEventListener('click', (e) => {
-      console.log('startBtn clicked, attempting pointer lock');
-      try { controls.lock(); } catch (err) { console.warn('controls.lock() failed', err); }
+    console.log('startBtn clicked, attempting pointer lock');
+    updatePointerStatus('Tentative de verrouillage...');
+    try { controls.lock(); } catch (err) { console.warn('controls.lock() failed', err); }
       // Try direct document.body.requestPointerLock() as a fallback if not locked shortly
       setTimeout(() => {
         if (!document.pointerLockElement && document.body.requestPointerLock) {
-          try { document.body.requestPointerLock(); } catch (err) { console.warn('requestPointerLock failed', err); }
+          try { document.body.requestPointerLock(); } catch (err) { console.warn('requestPointerLock failed', err); updatePointerStatus('Erreur: impossible de verrouiller la souris'); }
         }
       }, 150);
     });
