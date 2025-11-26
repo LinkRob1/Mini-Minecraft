@@ -1,0 +1,10 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; font-family: Arial, Helvetica, sans-serif; }
+#overlay {
+  position: absolute; left: 8px; top: 8px; z-index: 2; padding: 12px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 8px; max-width: 420px;
+}
+#startBtn { padding: 8px 12px; margin-top: 8px; cursor: pointer; }
+canvas { display: block; }
+#crosshair {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; color: rgba(255,255,255,0.8); font-size: 16px;
+}
