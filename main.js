@@ -65,6 +65,10 @@ function removeBlock(x, y, z) {
   if (!mesh) return false;
   scene.remove(mesh);
   blocks.delete(key);
+  // give to inventory
+  const type = mesh.userData.type || 'grass';
+  if (!infiniteMode) counts[type] = (counts[type] || 0) + 1;
+  updateHotbarUI();
   return true;
 }
 
@@ -189,6 +193,19 @@ function generateTerrain(width = 40, depth = 40, maxHeight = 6, seed = 0) {
 // generate initial terrain
 generateTerrain(40, 40, 8, 42);
 Object.keys(instancedData).forEach(t => rebuildInstancedMesh(t));
+// position player on top of the terrain (center)
+function findTopBlockYAt(x, z) {
+  for (let y = 64; y >= -64; y--) {
+    if (staticBlockSet.has(`${x},${y},${z}`) || blocks.has(`${x},${y},${z}`)) return y;
+  }
+  return null;
+}
+const spawnTop = findTopBlockYAt(0, 0);
+if (spawnTop !== null) {
+  controls.getObject().position.set(0, spawnTop + 0.5 + PLAYER_HEIGHT, 0);
+} else {
+  controls.getObject().position.set(0, 12, 0);
+}
 
 // grid
 const grid = new THREE.GridHelper(80, 80, 0x000000, 0x000000); grid.material.opacity = 0.08; grid.material.transparent = true; scene.add(grid);
@@ -206,6 +223,20 @@ const blockSelect = document.getElementById('blockSelect');
 const saveBtn = document.getElementById('saveBtn');
 const loadBtn = document.getElementById('loadBtn');
 const clearBtn = document.getElementById('clearBtn');
+const hotbarSlots = Array.from(document.querySelectorAll('#hotbar .slot'));
+const counts = { grass: 20, dirt: 20, stone: 10, wood: 5 };
+let infiniteMode = false;
+let selectedType = 'grass';
+
+function updateHotbarUI() {
+  hotbarSlots.forEach(slot => {
+    const t = slot.dataset.type;
+    slot.classList.toggle('selected', t === selectedType);
+    const c = slot.querySelector('.count');
+    if (c) c.innerText = infiniteMode ? '∞' : (counts[t] || 0);
+  });
+}
+updateHotbarUI();
 
 function updateGhost() {
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
@@ -226,7 +257,7 @@ function updateGhost() {
       pos = it.object.position.clone().add(it.face.normal);
     }
     ghostCube.position.copy(pos);
-    ghostCube.material = MATERIALS[blockSelect.value];
+    ghostCube.material = MATERIALS[selectedType];
     ghostCube.material.transparent = true;
     ghostCube.material.opacity = 0.5;
     ghostCube.visible = true;
@@ -275,8 +306,15 @@ window.addEventListener('mousedown', (e) => {
       } else {
         pos = it.object.position.clone().add(it.face.normal);
       }
-      // add as dynamic block
-      addBlock(Math.round(pos.x), Math.round(pos.y), Math.round(pos.z), blockSelect.value);
+      // add as dynamic block if inventory allows
+      const type = selectedType;
+      if (infiniteMode || (counts[type] || 0) > 0) {
+        addBlock(Math.round(pos.x), Math.round(pos.y), Math.round(pos.z), type);
+        if (!infiniteMode) counts[type] = Math.max(0, counts[type] - 1);
+        updateHotbarUI();
+      } else {
+        // optionally play a 'no resources' sound / effect
+      }
     }
   }
 });
@@ -290,6 +328,11 @@ window.addEventListener('keydown', (e) => {
     case 'KeyD': moveState.right = true; break;
     case 'Space': if (player.canJump) { player.velocity.y = 8; player.canJump = false; } break;
     case 'Escape': controls.unlock(); break;
+    case 'Digit1': selectedType='grass'; updateHotbarUI(); break;
+    case 'Digit2': selectedType='dirt'; updateHotbarUI(); break;
+    case 'Digit3': selectedType='stone'; updateHotbarUI(); break;
+    case 'Digit4': selectedType='wood'; updateHotbarUI(); break;
+    case 'KeyR': infiniteMode = !infiniteMode; updateHotbarUI(); break; // toggle infinite
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -498,6 +541,9 @@ controls.getObject().position.set(0, 10, 0); scene.add(controls.getObject());
 
 // HUD pos
 const posDiv = document.createElement('div'); posDiv.id = 'hud-pos'; posDiv.style.position = 'absolute'; posDiv.style.right = '8px'; posDiv.style.top = '8px'; posDiv.style.color = '#fff'; posDiv.style.background = 'rgba(0,0,0,0.4)'; posDiv.style.padding = '6px 8px'; posDiv.style.borderRadius = '6px'; posDiv.style.fontSize = '12px'; document.body.appendChild(posDiv);
+// HUD for selected block
+const selDiv = document.createElement('div'); selDiv.id = 'hud-sel'; selDiv.style.position = 'absolute'; selDiv.style.left = '8px'; selDiv.style.top = '8px'; selDiv.style.color = '#fff'; selDiv.style.background = 'rgba(0,0,0,0.4)'; selDiv.style.padding = '6px 8px'; selDiv.style.borderRadius = '6px'; selDiv.style.fontSize = '12px'; selDiv.innerText = `Block: ${blockSelect.value}`; document.body.appendChild(selDiv);
+blockSelect.addEventListener('change', () => { selDiv.innerText = `Block: ${blockSelect.value}` });
 
 // animation loop
 const clock = new THREE.Clock();
