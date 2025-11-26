@@ -1,64 +1,57 @@
-// Mini-Minecraft (simplifié)
-// Scène, caméra, rendu, contrôles, terrain procédural, interaction blocs
+// Mini-Minecraft: improved
+// Three.js scene + Perlin noise terrain + block types + save/load
 
+// Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb); // ciel bleu
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+scene.background = new THREE.Color(0x87ceeb);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Lumières
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(10, 20, 10);
-scene.add(dirLight);
+// Lights
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); dirLight.position.set(10, 20, 10); scene.add(dirLight);
 
-// Controls (PointerLockControls)
+// Controls
 const controls = new THREE.PointerLockControls(camera, document.body);
-
 const startBtn = document.getElementById('startBtn');
 const overlay = document.getElementById('overlay');
-startBtn.addEventListener('click', () => {
-  controls.lock();
-});
-controls.addEventListener('lock', () => { overlay.style.display = 'none'; });
-controls.addEventListener('unlock', () => { overlay.style.display = ''; });
+startBtn.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => overlay.style.display = 'none');
+controls.addEventListener('unlock', () => overlay.style.display = '');
 
 // Player
 const player = {
-  velocity: new THREE.Vector3(),
-  direction: new THREE.Vector3(),
+  velocity: new THREE.Vector3(0, 0, 0),
+  direction: new THREE.Vector3(0, 0, 0),
   canJump: false,
   speed: 6,
 };
-
-// Keyboard movement state
 const moveState = { forward: false, back: false, left: false, right: false };
 
-// Geometry & materials (shared)
+// Blocks
 const BLOCK_SIZE = 1;
 const boxGeometry = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-const defaultMaterial = new THREE.MeshLambertMaterial({ color: 0x00aa00 });
-const dirtMaterial = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
-const stoneMaterial = new THREE.MeshLambertMaterial({ color: 0x808080 });
+const MATERIALS = {
+  grass: new THREE.MeshLambertMaterial({ color: 0x2e8b57 }),
+  dirt: new THREE.MeshLambertMaterial({ color: 0x8b5a2b }),
+  stone: new THREE.MeshLambertMaterial({ color: 0x808080 }),
+  wood: new THREE.MeshLambertMaterial({ color: 0x8b4513 }),
+};
 
-// Map to keep track of blocks keyed by 'x,y,z'
+// blocks map: key -> mesh
 const blocks = new Map();
-function keyFromVec(x, y, z) {
-  return `${x},${y},${z}`;
-}
+function keyFromVec(x, y, z) { return `${x},${y},${z}`; }
 
-function addBlock(x, y, z, mat = defaultMaterial) {
+function addBlock(x, y, z, type = 'grass') {
   const key = keyFromVec(x, y, z);
   if (blocks.has(key)) return null;
-  const mesh = new THREE.Mesh(boxGeometry, mat);
+  if (!(type in MATERIALS)) type = 'grass';
+  const mesh = new THREE.Mesh(boxGeometry, MATERIALS[type]);
   mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.userData = { type };
   scene.add(mesh);
   blocks.set(key, mesh);
   return mesh;
@@ -73,88 +66,133 @@ function removeBlock(x, y, z) {
   return true;
 }
 
-// Procedural Terrain: simple noise approximation
-function generateTerrain(width, depth, maxHeight) {
+// Perlin implementation (improved Perlin, ported)
+const Perlin = (function() {
+  const permutation = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57, 177,33,88,237,149,56,87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244, 102,143,54,65,25,63,161, 1,216,80,73,209,76,132,187,208, 89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152, 2,44,154,163,70,221,153,101,155,167, 43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107,49,192,214, 31,181,199,106,157,184,84,204,176,115,121,50,45,127, 4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+  const p = new Array(512);
+  for (let i = 0; i < 512; i++) p[i] = permutation[i % 256];
+
+  function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  function lerp(a, b, t) { return (1 - t) * a + t * b; }
+  function grad(hash, x, y, z) {
+    const h = hash & 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : (h === 12 || h === 14 ? x : z);
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+  }
+
+  return {
+    noise: function(x, y, z) {
+      const X = Math.floor(x) & 255,
+            Y = Math.floor(y) & 255,
+            Z = Math.floor(z) & 255;
+      x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+      const u = fade(x), v = fade(y), w = fade(z);
+      const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+      const B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+
+      return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z), grad(p[BA], x - 1, y, z)),
+                             lerp(u, grad(p[AB], x, y - 1, z), grad(p[BB], x - 1, y - 1, z))),
+                     lerp(v, lerp(u, grad(p[AA + 1], x, y, z - 1), grad(p[BA + 1], x - 1, y, z - 1)),
+                             lerp(u, grad(p[AB + 1], x, y - 1, z - 1), grad(p[BB + 1], x - 1, y - 1, z - 1))));
+    }
+  };
+})();
+
+function perlin2D(x, y, options = {}) {
+  const octaves = options.octaves || 4;
+  const persistence = options.persistence || 0.5;
+  let total = 0;
+  let frequency = 1;
+  let amplitude = 1;
+  let maxValue = 0;
+  for (let i = 0; i < octaves; i++) {
+    total += Perlin.noise(x * frequency, y * frequency, 0) * amplitude;
+    maxValue += amplitude;
+    amplitude *= persistence;
+    frequency *= 2;
+  }
+  return total / maxValue;
+}
+
+// Terrain generation
+function generateTerrain(width = 40, depth = 40, maxHeight = 6, seed = 0) {
+  const xOffset = -Math.floor(width / 2);
+  const zOffset = -Math.floor(depth / 2);
   for (let i = 0; i < width; i++) {
     for (let k = 0; k < depth; k++) {
-      // simple hills using sin + random
-      const nx = i / width;
-      const nz = k / depth;
-      const height = Math.floor((Math.sin(nx * Math.PI * 2) + Math.cos(nz * Math.PI * 2) + Math.random() * 0.8) * (maxHeight / 2)) + 1;
+      const nx = (i + seed) / 10.0;
+      const nz = (k + seed) / 10.0;
+      const noiseVal = perlin2D(nx, nz, { octaves: 4, persistence: 0.5 });
+      const normalized = (noiseVal + 1) / 2;
+      const height = Math.max(1, Math.floor(normalized * (maxHeight - 1)) + 1);
       for (let y = 0; y < height; y++) {
-        const mat = y === height - 1 ? defaultMaterial : dirtMaterial;
-        addBlock(i - Math.floor(width/2), y, k - Math.floor(depth/2), mat);
+        const type = (y === height - 1) ? 'grass' : 'dirt';
+        addBlock(i + xOffset, y, k + zOffset, type);
       }
     }
   }
 }
 
-generateTerrain(40, 40, 6);
+// generate initial terrain
+generateTerrain(40, 40, 8, 42);
 
-// Add a directional grid (optional)
-const grid = new THREE.GridHelper(80, 80, 0x000000, 0x000000);
-grid.material.opacity = 0.07;
-grid.material.transparent = true;
-scene.add(grid);
+// grid
+const grid = new THREE.GridHelper(80, 80, 0x000000, 0x000000); grid.material.opacity = 0.08; grid.material.transparent = true; scene.add(grid);
 
 // Crosshair
-const crosshair = document.createElement('div');
-crosshair.id = 'crosshair';
-crosshair.innerText = '+';
-document.body.appendChild(crosshair);
+const crosshair = document.createElement('div'); crosshair.id = 'crosshair'; crosshair.innerText = '+'; document.body.appendChild(crosshair);
 
-// Raycaster for interactions
+// Raycaster and ghost
 const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
+const ghostCube = new THREE.Mesh(boxGeometry, new THREE.MeshLambertMaterial({ color: 0xffffff, opacity: 0.6, transparent: true }));
+ghostCube.visible = false; scene.add(ghostCube);
 
-// Ghost block for placement preview
-const ghostMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, opacity: 0.6, transparent: true });
-const ghostCube = new THREE.Mesh(boxGeometry, ghostMaterial);
-ghostCube.visible = false;
-scene.add(ghostCube);
+// UI elements
+const blockSelect = document.getElementById('blockSelect');
+const saveBtn = document.getElementById('saveBtn');
+const loadBtn = document.getElementById('loadBtn');
+const clearBtn = document.getElementById('clearBtn');
 
 function updateGhost() {
-  // cast ray from camera center
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
   const intersects = raycaster.intersectObjects(Array.from(blocks.values()));
   if (intersects.length > 0) {
     const it = intersects[0];
-    // For placement: show face-adjacent cell
-    const normal = it.face.normal;
-    const pos = it.object.position.clone().add(normal);
+    const pos = it.object.position.clone().add(it.face.normal);
     ghostCube.position.copy(pos);
+    ghostCube.material = MATERIALS[blockSelect.value];
+    ghostCube.material.transparent = true;
+    ghostCube.material.opacity = 0.5;
     ghostCube.visible = true;
   } else {
     ghostCube.visible = false;
   }
 }
 
-// Event listeners for mouse clicks
-window.addEventListener('contextmenu', (e) => e.preventDefault());
-
+// Click handlers
+window.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('mousedown', (e) => {
   if (!controls.isLocked) return;
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
   const intersects = raycaster.intersectObjects(Array.from(blocks.values()));
-  if (e.button === 0) { // left click: remove
+  if (e.button === 0) {
+    // left click remove
     if (intersects.length > 0) {
       const it = intersects[0];
-      const pos = it.object.position;
-      removeBlock(pos.x, pos.y, pos.z);
+      removeBlock(it.object.position.x, it.object.position.y, it.object.position.z);
     }
-  } else if (e.button === 2) { // right click: add
+  } else if (e.button === 2) {
+    // right click add block of selected type
     if (intersects.length > 0) {
       const it = intersects[0];
-      const normal = it.face.normal;
-      const pos = it.object.position.clone().add(normal);
-      addBlock(pos.x, pos.y, pos.z, stoneMaterial);
+      const pos = it.object.position.clone().add(it.face.normal);
+      addBlock(pos.x, pos.y, pos.z, blockSelect.value);
     }
   }
 });
 
-// Movement & physics
-const clock = new THREE.Clock();
-
+// Input
 window.addEventListener('keydown', (e) => {
   switch (e.code) {
     case 'KeyW': moveState.forward = true; break;
@@ -177,7 +215,6 @@ window.addEventListener('keyup', (e) => {
 function isOnGround() {
   const pos = controls.getObject().position;
   const footY = Math.floor(pos.y - 0.1);
-  // check for block directly below
   const key = keyFromVec(Math.round(pos.x), footY, Math.round(pos.z));
   return blocks.has(key);
 }
@@ -191,63 +228,61 @@ function updatePlayer(delta) {
   if (moveState.right) player.direction.x += 1;
 
   player.direction.normalize();
-
-  // Get forward vector from camera
-  const forward = new THREE.Vector3();
-  camera.getWorldDirection(forward);
-  forward.y = 0; forward.normalize();
-  const right = new THREE.Vector3();
-  right.crossVectors(forward, camera.up).normalize();
-
+  const forwardVector = new THREE.Vector3(); camera.getWorldDirection(forwardVector); forwardVector.y = 0; forwardVector.normalize();
+  const rightVector = new THREE.Vector3(); rightVector.crossVectors(forwardVector, camera.up).normalize();
   const move = new THREE.Vector3();
-  move.addScaledVector(forward, -player.direction.z * speed * delta);
-  move.addScaledVector(right, player.direction.x * speed * delta);
+  move.addScaledVector(forwardVector, -player.direction.z * speed * delta);
+  move.addScaledVector(rightVector, player.direction.x * speed * delta);
 
-  // Apply gravity
-  player.velocity.y -= 9.8 * delta; // gravity
-
-  // Predict vertical position to check collisions
-  const nextPos = controls.getObject().position.clone().add(move);
-  nextPos.y += player.velocity.y * delta;
-
-  // Basic collision: check if the predicted y collides with a block
+  player.velocity.y -= 9.8 * delta;
   const standingOn = isOnGround();
-  if (standingOn) {
-    player.velocity.y = Math.max(0, player.velocity.y);
-    player.canJump = true;
-  } else {
-    player.canJump = false;
-  }
+  if (standingOn) { player.canJump = true; player.velocity.y = Math.max(0, player.velocity.y); }
+  else player.canJump = false;
 
-  // Move horizontally
   controls.getObject().position.add(move);
-  // Move vertically
   controls.getObject().position.y += player.velocity.y * delta;
-
-  // prevent falling too low
   if (controls.getObject().position.y < -50) {
     controls.getObject().position.set(0, 10, 0);
     player.velocity.set(0, 0, 0);
   }
 }
 
-// Initialize player start position
-controls.getObject().position.set(0, 10, 0);
-scene.add(controls.getObject());
+// world management: save/load
+function saveWorld() {
+  const arr = [];
+  for (const [k, mesh] of blocks.entries()) {
+    const [x, y, z] = k.split(',').map(Number);
+    arr.push({ x, y, z, type: mesh.userData.type || 'grass' });
+  }
+  localStorage.setItem('mini-minecraft-world', JSON.stringify(arr));
+}
+function loadWorld() {
+  const json = localStorage.getItem('mini-minecraft-world');
+  if (!json) return false;
+  const arr = JSON.parse(json);
+  // clear current
+  for (const k of Array.from(blocks.keys())) {
+    const [x, y, z] = k.split(',').map(Number);
+    removeBlock(x, y, z);
+  }
+  for (const b of arr) addBlock(b.x, b.y, b.z, b.type);
+  return true;
+}
+function clearWorld() { for (const k of Array.from(blocks.keys())) { const [x,y,z]=k.split(',').map(Number); removeBlock(x,y,z); } }
 
-// Simple FPS overlay: current pos
-const posDiv = document.createElement('div');
-posDiv.style.position = 'absolute';
-posDiv.style.right = '8px';
-posDiv.style.top = '8px';
-posDiv.style.color = '#fff';
-posDiv.style.background = 'rgba(0,0,0,0.4)';
-posDiv.style.padding = '6px 8px';
-posDiv.style.borderRadius = '6px';
-posDiv.style.fontSize = '12px';
-document.body.appendChild(posDiv);
+// UI button bindings
+saveBtn.addEventListener('click', () => { saveWorld(); alert('Monde sauvegardé localement'); });
+loadBtn.addEventListener('click', () => { const ok = loadWorld(); if (ok) alert('Monde chargé'); else alert('Aucune sauvegarde trouvée'); });
+clearBtn.addEventListener('click', () => { if (confirm('Effacer le monde actuel ?')) clearWorld(); });
 
+// initial player spawn
+controls.getObject().position.set(0, 10, 0); scene.add(controls.getObject());
 
+// HUD pos
+const posDiv = document.createElement('div'); posDiv.id = 'hud-pos'; posDiv.style.position = 'absolute'; posDiv.style.right = '8px'; posDiv.style.top = '8px'; posDiv.style.color = '#fff'; posDiv.style.background = 'rgba(0,0,0,0.4)'; posDiv.style.padding = '6px 8px'; posDiv.style.borderRadius = '6px'; posDiv.style.fontSize = '12px'; document.body.appendChild(posDiv);
+
+// animation loop
+const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(0.05, clock.getDelta());
@@ -258,13 +293,8 @@ function animate() {
 }
 animate();
 
-// Handle window resize
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// resize
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
-// Expose add/remove for console quick testing
-window.addBlock = addBlock;
-window.removeBlock = removeBlock;
+// Expose for debugging
+window.addBlock = addBlock; window.removeBlock = removeBlock; window.saveWorld = saveWorld; window.loadWorld = loadWorld; window.clearWorld = clearWorld;

@@ -9,7 +9,19 @@
 <body>
   <div id="overlay">
     <h1>Mini Minecraft</h1>
-    <p>WASD: déplacement • E: action • Click gauche: supprimer bloc • Click droit: placer bloc • Echap: libérer souris</p>
+    <p>WASD: déplacement · Space: saut · Click gauche: supprimer · Click droit: placer · Echap: déverrouiller</p>
+    <div id="controlsRow">
+        <label for="blockSelect">Bloc:</label>
+        <select id="blockSelect">
+          <option value="grass">Herbe</option>
+          <option value="dirt">Terre</option>
+          <option value="stone">Pierre</option>
+          <option value="wood">Bois</option>
+        </select>
+        <button id="saveBtn">Sauvegarder</button>
+        <button id="loadBtn">Charger</button>
+        <button id="clearBtn">Effacer monde</button>
+    </div>
     <button id="startBtn">Commencer</button>
   </div>
 

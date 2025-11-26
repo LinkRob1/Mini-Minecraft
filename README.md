@@ -1,5 +1,5 @@
 # Mini-Minecraft
-Mini-Minecraft est un projet d'exemple simple qui montre un petit monde voxel en 3D avec mouvement joueur, placement/suppression de blocs et génération procédurale minimale.
+Mini-Minecraft est un projet d'exemple qui montre un petit monde voxel en 3D avec mouvement joueur, placement/suppression de blocs et génération procédurale basée sur Perlin noise.
 
 Fonctionnalités implémentées :
 - Scène 3D construite avec Three.js
@@ -22,6 +22,12 @@ npx http-server -c-1
 
 2. Ouvrez le navigateur sur http://localhost:8000
 3. Cliquez sur « Commencer » pour verrouiller la souris. Utilisez WASD pour bouger, espace pour sauter.
+4. Choisissez un type de bloc depuis le sélecteur dans l'overlay pour placer différentes textures.
+
+Fonctionnalités supplémentaires :
+- Choix du type de bloc (Herbe, Terre, Pierre, Bois)
+- Sauvegarde / chargement du monde dans `localStorage`
+- Effacer le monde
 
 Prochaines étapes recommandées :
 - Optimisation (InstancedMesh pour les blocs)
