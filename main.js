@@ -22,9 +22,19 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.7); dirLight.position.se
 const controls = new THREE.PointerLockControls(camera, document.body);
 const startBtn = document.getElementById('startBtn');
 const overlay = document.getElementById('overlay');
-startBtn.addEventListener('click', () => controls.lock());
-controls.addEventListener('lock', () => overlay.style.display = 'none');
-controls.addEventListener('unlock', () => overlay.style.display = '');
+console.log('startBtn element:', startBtn, 'overlay element:', overlay);
+if (startBtn) {
+  startBtn.addEventListener('click', (e) => {
+    console.log('startBtn clicked, calling controls.lock()');
+    controls.lock();
+  });
+} else {
+  console.warn('startBtn not found');
+}
+controls.addEventListener('lock', () => { console.log('Pointer locked'); overlay.style.display = 'none'; });
+controls.addEventListener('unlock', () => { console.log('Pointer unlocked'); overlay.style.display = ''; });
+// Pointer lock error handler
+document.addEventListener('pointerlockerror', (e) => { console.warn('Pointer lock error', e); overlay.style.display = ''; });
 
 // Player
 const player = {
