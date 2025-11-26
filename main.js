@@ -13,8 +13,10 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 // Lights
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); dirLight.position.set(10, 20, 10); scene.add(dirLight);
+// lighting: ambient + hemisphere + directional for warmth
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.35); scene.add(ambientLight);
+const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x777777, 0.6); scene.add(hemiLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.7); dirLight.position.set(10, 20, 10); scene.add(dirLight);
 
 // Controls
 const controls = new THREE.PointerLockControls(camera, document.body);
@@ -64,10 +66,10 @@ const textures = {
 };
 
 const MATERIALS = {
-  grass: new THREE.MeshLambertMaterial({ map: textures.grass }),
-  dirt: new THREE.MeshLambertMaterial({ map: textures.dirt }),
-  stone: new THREE.MeshLambertMaterial({ map: textures.stone }),
-  wood: new THREE.MeshLambertMaterial({ map: textures.wood }),
+  grass: new THREE.MeshStandardMaterial({ map: textures.grass, roughness: 1.0, metalness: 0.0 }),
+  dirt: new THREE.MeshStandardMaterial({ map: textures.dirt, roughness: 1.0, metalness: 0.0 }),
+  stone: new THREE.MeshStandardMaterial({ map: textures.stone, roughness: 1.0, metalness: 0.0 }),
+  wood: new THREE.MeshStandardMaterial({ map: textures.wood, roughness: 0.9, metalness: 0.0 }),
 };
 
 // dynamic blocks map (user-placed or non-instanced)
@@ -117,8 +119,19 @@ createInstancedMeshes(20000);
 
 function addInstancedBlock(type, x, y, z) {
   if (!(type in instancedData)) type = 'grass';
-  instancedData[type].push({ x, y, z });
+  const list = instancedData[type];
+  const key = `${x},${y},${z}`;
+  if (staticBlockSet.has(key)) return null; // already exists
+  const idx = list.length;
+  list.push({ x, y, z });
   staticBlockSet.add(`${x},${y},${z}`);
+  const mesh = instancedMeshes[type];
+  const m = new THREE.Matrix4();
+  m.makeTranslation(x, y, z);
+  mesh.setMatrixAt(idx, m);
+  mesh.count = list.length;
+  mesh.instanceMatrix.needsUpdate = true;
+  return idx;
 }
 
 function removeInstancedBlock(type, x, y, z) {
@@ -127,9 +140,24 @@ function removeInstancedBlock(type, x, y, z) {
   const key = `${x},${y},${z}`;
   const idx = list.findIndex((p) => p.x === x && p.y === y && p.z === z);
   if (idx === -1) return false;
-  list.splice(idx, 1);
+  const lastIdx = list.length - 1;
+  // if not last, swap last into idx
+  if (idx !== lastIdx) {
+    const last = list[lastIdx];
+    // set last instance's matrix to idx
+    const mesh = instancedMeshes[type];
+    const mat = new THREE.Matrix4();
+    mat.makeTranslation(last.x, last.y, last.z);
+    mesh.setMatrixAt(idx, mat);
+    // update in array
+    list[idx] = last;
+  }
+  list.pop();
   staticBlockSet.delete(key);
-  rebuildInstancedMesh(type);
+  // decrement count and mark update
+  const mesh = instancedMeshes[type];
+  mesh.count = list.length;
+  mesh.instanceMatrix.needsUpdate = true;
   return true;
 }
 
@@ -137,7 +165,7 @@ function rebuildInstancedMesh(type) {
   const list = instancedData[type];
   const mesh = instancedMeshes[type];
   if (!mesh) return;
-  // Set matrices for instances
+  // Rebuild matrices for all instances (used after major change)
   const count = list.length;
   for (let i = 0; i < count; i++) {
     const pos = list[i];
