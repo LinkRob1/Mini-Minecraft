@@ -27,6 +27,7 @@ if (startBtn) {
   startBtn.addEventListener('click', (e) => {
     console.log('startBtn clicked, attempting pointer lock');
     updatePointerStatus('Tentative de verrouillage...');
+    startBtn.disabled = true;
     try { controls.lock(); } catch (err) { console.warn('controls.lock() failed', err); }
       // Try direct document.body.requestPointerLock() as a fallback if not locked shortly
       setTimeout(() => {
@@ -75,8 +76,8 @@ renderer.domElement.addEventListener('mousemove', (e) => {
   }
 });
 document.addEventListener('mouseup', () => { mouseDrag.active = false; });
-controls.addEventListener('lock', () => { console.log('Pointer locked'); overlay.style.display = 'none'; });
-controls.addEventListener('unlock', () => { console.log('Pointer unlocked'); overlay.style.display = ''; });
+controls.addEventListener('lock', () => { console.log('Pointer locked'); overlay.style.display = 'none'; startBtn.disabled = false; updatePointerStatus(''); });
+controls.addEventListener('unlock', () => { console.log('Pointer unlocked'); overlay.style.display = ''; startBtn.disabled = false; updatePointerStatus(''); });
 // Pointer lock error handler
 document.addEventListener('pointerlockerror', (e) => { console.warn('Pointer lock error', e); overlay.style.display = ''; updatePointerStatus('Erreur: impossible de verrouiller la souris.'); });
 document.addEventListener('pointerlockchange', () => {
